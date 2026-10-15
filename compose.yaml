@@ -1,0 +1,16 @@
+services:
+  floci:
+    image: floci/floci:latest
+    ports:
+      - "127.0.0.1:4566:4566"
+    environment:
+      FLOCI_STORAGE_MODE: hybrid
+      FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+      FLOCI_RUN_AS_ROOT: "true"
+
+    volumes:
+      - floci_data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  floci_data:

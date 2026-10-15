@@ -1,0 +1,87 @@
+name: Local AWS Deployment Workflow
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: floci-lab-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-test:
+    name: Deploy and Test
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localhost:4566
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.14.6
+          terraform_wrapper: false
+
+      - name: Run Unit Tests
+        run: |
+          PYTHONPATH=app python3 -m unittest discover \
+            -s tests \
+            -p "test_handler.py" \
+            -v
+
+      - name: Start Floci
+        run: |
+          docker-compose up -d
+
+      - name: Wait for AWS infrastructure to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if aws s3 ls --endpoint-url http://localhost:4566 > /dev/null 2>&1; then
+              echo "AWS infrastructure is ready."
+              break
+            else
+              echo "Waiting for AWS infrastructure to be ready... ($i/30)"
+              sleep 5
+            fi
+          done
+          docker compose logs
+          exit
+
+      - name: Package Application
+        run: |
+          mkdir -p build
+          zip -j build/lambda.zip app/handler.py
+
+      - name: Deploy Infrastructure
+        run: |
+          terraform -chdir=infra init -input=false
+          terraform -chdir=infra fmt -check
+          terraform -chdir=infra validate
+          terraform -chdir=infra plan -out=tfplan -input=false
+          terraform -chdir=infra apply -input=false tfplan -auto-approve
+
+      - name: Run Deployment Tests
+        run: |
+          python3 tests/smoke.py
+
+      - name: Show Floci Logs on Failure
+        if: failure()
+        run: |
+          echo "Deployment failed. Showing Floci logs:"
+          docker-compose logs -tail=200
+
+      - name: Cleanup Test Infra
+        if: always()
+        run: |
+          terraform -chdir=infra destroy -auto-approve
+          docker-compose down -v

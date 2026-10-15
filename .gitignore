@@ -1,0 +1,18 @@
+# Terraform
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+*.tfplan
+crash.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Application builds
+build/
+
+# Local files
+.DS_Store
+.env
